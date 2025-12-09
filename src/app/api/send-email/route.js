@@ -4,27 +4,29 @@ export async function POST(request) {
   try {
     const formData = await request.formData();
 
-    // Get text fields
     const name = formData.get("name");
     const email = formData.get("email");
     const note = formData.get("note");
     const career_position = formData.get("career_position");
-
-    // File field
     const file = formData.get("career_resume");
 
     if (!name || !email || !note || !career_position || !file) {
-      return Response.json(
-        { success: false, error: "Missing required fields" },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing required fields" }),
+        {
+          status: 400,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Content-Type": "application/json"
+          }
+        }
       );
     }
 
-    // Convert file → Buffer (required by Nodemailer)
+    // Read PDF file
     const fileArrayBuffer = await file.arrayBuffer();
     const fileBuffer = Buffer.from(fileArrayBuffer);
 
-    // Nodemailer transporter
     const transporter = nodemailer.createTransport({
       service: "gmail",
       host: "smtp.gmail.com",
@@ -54,20 +56,34 @@ export async function POST(request) {
         {
           filename: file.name,
           content: fileBuffer,
-          contentType: file.type, // application/pdf
+          contentType: file.type,
         },
       ],
     });
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({ success: true }),
+      {
+        status: 200,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
   } catch (error) {
     console.error("Email error:", error);
-    return Response.json(
-      { success: false, error: "Email failed to send" },
-      { status: 500 }
+
+    return new Response(
+      JSON.stringify({ success: false, error: "Email failed to send" }),
+      {
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json"
+        }
+      }
     );
   }
 }
