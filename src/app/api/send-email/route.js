@@ -59,7 +59,10 @@ export async function POST(request) {
       ],
     });
 
-    return Response.json({ success: true });
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (error) {
     console.error("Email error:", error);
     return Response.json(
