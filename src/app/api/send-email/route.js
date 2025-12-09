@@ -1,45 +1,70 @@
-import nodemailer from 'nodemailer';
+import nodemailer from "nodemailer";
 
 export async function POST(request) {
-  
   try {
-    const body = await request.json();
-    const { name, email, message, applyfor } = body;
+    const formData = await request.formData();
 
-    if (!name || !email || !message || !applyfor) {
-      return Response.json({ success: false, error: 'Missing required fields' }, { status: 400 });
+    // Get text fields
+    const name = formData.get("name");
+    const email = formData.get("email");
+    const note = formData.get("note");
+    const career_position = formData.get("career_position");
+
+    // File field
+    const file = formData.get("career_resume");
+
+    if (!name || !email || !note || !career_position || !file) {
+      return Response.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
+    // Convert file → Buffer (required by Nodemailer)
+    const fileArrayBuffer = await file.arrayBuffer();
+    const fileBuffer = Buffer.from(fileArrayBuffer);
+
+    // Nodemailer transporter
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      service: "gmail",
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
       auth: {
         user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASS
-      }
+        pass: process.env.MAIL_PASS,
+      },
     });
 
-    const success = await transporter.verify();
-    console.log('Transporter ready?', success);
+    await transporter.verify();
 
     await transporter.sendMail({
       from: `"${name}" <${email}>`,
       to: process.env.MAIL_USER,
-      subject: `New Enquiry for ${applyfor}`,
+      subject: `New Career Application for ${career_position}`,
       html: `
-        <h2>New Career Enquiry for ${applyfor}</h2>
+        <h2>New Career Application</h2>
+        <p><strong>Position:</strong> ${career_position}</p>
         <p><strong>Name:</strong> ${name}</p>
         <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Message:</strong></p>
-        <p>${message}</p>
-      `
+        <p><strong>Note:</strong></p>
+        <p>${note}</p>
+      `,
+      attachments: [
+        {
+          filename: file.name,
+          content: fileBuffer,
+          contentType: file.type, // application/pdf
+        },
+      ],
     });
 
     return Response.json({ success: true });
   } catch (error) {
-    console.error('Email error:', error);
-    return Response.json({ success: false, error: 'Email failed to send' }, { status: 500 });
+    console.error("Email error:", error);
+    return Response.json(
+      { success: false, error: "Email failed to send" },
+      { status: 500 }
+    );
   }
 }
