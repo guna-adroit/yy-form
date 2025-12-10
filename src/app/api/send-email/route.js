@@ -75,6 +75,7 @@ export async function POST(request) {
   } catch (error) {
     console.error("Email error:", error);
 
+    
     return new Response(
       JSON.stringify({ success: false, error: "Email failed to send" }),
       {
