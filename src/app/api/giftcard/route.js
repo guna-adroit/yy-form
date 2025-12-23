@@ -7,9 +7,28 @@ const ALLOWED_ORIGINS = [
   "https://guna-am.myshopify.com",
 ];
 
-// ---------------------------
-// CORS helper
-// ---------------------------
+const GIFT_CARD_QUERY = `
+  query GiftCards($first: Int!, $after: String) {
+    giftCards(first: $first, after: $after, query: "status:enabled") {
+      edges {
+        cursor
+        node {
+          enabled
+          expiresOn
+          lastCharacters
+          balance {
+            amount
+            currencyCode
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+      }
+    }
+  }
+`;
+
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -18,25 +37,17 @@ function corsHeaders(origin) {
   };
 }
 
-// ---------------------------
-// Preflight handler
-// ---------------------------
 export function OPTIONS(req) {
   const origin = req.headers.get("origin");
-
   if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
     return new Response(null, { status: 403 });
   }
-
   return new Response(null, {
     status: 204,
     headers: corsHeaders(origin),
   });
 }
 
-// ---------------------------
-// POST handler
-// ---------------------------
 export async function POST(req) {
   const origin = req.headers.get("origin");
 
@@ -49,89 +60,75 @@ export async function POST(req) {
 
   try {
     const { code } = await req.json();
-
     if (!code) {
       return NextResponse.json(
-        { error: "Gift card code is required" },
-        {
-          status: 400,
-          headers: corsHeaders(origin),
-        }
+        { error: "Gift card code required" },
+        { status: 400, headers: corsHeaders(origin) }
       );
     }
 
     const normalized = code.replace(/\s+/g, "").toUpperCase();
     const lastFour = normalized.slice(-4);
 
-    const res = await fetch(
-      `https://${SHOP}/admin/api/2024-01/graphql.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": TOKEN,
-        },
-        body: JSON.stringify({
-          query: `
-            query {
-              giftCards(first: 250) {
-                edges {
-                  node {
-                    enabled
-                    expiresOn
-                    lastCharacters
-                    balance {
-                      amount
-                      currencyCode
-                    }
-                  }
-                }
-              }
-            }
-          `,
-        }),
-      }
-    );
+    let after = null;
+    let found = null;
 
-    const json = await res.json();
+    // 🔁 PAGINATION LOOP
+    while (!found) {
+      const res = await fetch(
+        `https://${SHOP}/admin/api/2025-01/graphql.json`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": TOKEN,
+          },
+          body: JSON.stringify({
+            query: GIFT_CARD_QUERY,
+            variables: { first: 100, after },
+          }),
+        }
+      );
 
-    const giftCards =
-      json.data?.giftCards?.edges?.map(e => e.node) || [];
+      const json = await res.json();
 
-    const giftCard = giftCards.find(gc =>
-      gc.lastCharacters === lastFour &&
-      gc.enabled &&
-      (!gc.expiresOn || new Date(gc.expiresOn) > new Date())
-    );
+      const edges = json.data.giftCards.edges;
 
-    if (!giftCard) {
+      found = edges.find(
+        (e) =>
+          e.node.lastCharacters === lastFour &&
+          e.node.enabled &&
+          (!e.node.expiresOn ||
+            new Date(e.node.expiresOn) > new Date())
+      )?.node;
+
+      if (found) break;
+
+      if (!json.data.giftCards.pageInfo.hasNextPage) break;
+
+      after = edges[edges.length - 1].cursor;
+    }
+
+    if (!found) {
       return NextResponse.json(
         { error: "Invalid or expired gift card" },
-        {
-          status: 404,
-          headers: corsHeaders(origin),
-        }
+        { status: 404, headers: corsHeaders(origin) }
       );
     }
 
     return NextResponse.json(
       {
-        balance: giftCard.balance.amount,
-        currency: giftCard.balance.currencyCode,
-        expires_on: giftCard.expiresOn,
+        balance: found.balance.amount,
+        currency: found.balance.currencyCode,
+        expires_on: found.expiresOn,
       },
-      {
-        status: 200,
-        headers: corsHeaders(origin),
-      }
+      { status: 200, headers: corsHeaders(origin) }
     );
   } catch (err) {
+    console.error("Gift card error", err);
     return NextResponse.json(
       { error: "Server error" },
-      {
-        status: 500,
-        headers: corsHeaders(origin),
-      }
+      { status: 500, headers: corsHeaders(origin) }
     );
   }
 }
